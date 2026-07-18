@@ -202,6 +202,8 @@
   .icon-btn:hover{ background:var(--surface-2); color:var(--text); }
   .icon-btn.danger:hover{ color:var(--danger); }
   .icon-btn.play-btn:hover{ color:var(--amber); }
+  a.icon-btn{ text-decoration:none; }
+  a.icon-btn:hover{ color:var(--blue); }
 
   /* ---------- Modal ---------- */
   .overlay{
@@ -284,6 +286,7 @@
     .field-row{ grid-template-columns:1fr; }
   }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -300,6 +303,7 @@
     <ul class="band-list" id="bandList"></ul>
     <button class="add-band-btn" id="btnAddBand">+ Nova banda</button>
     <button class="add-band-btn" id="btnInstallApp" style="display:none; margin-top:8px;">⬇ Instalar app</button>
+    <button class="add-band-btn" id="btnGoogleAuth" style="margin-top:8px;">🔗 Conectar com Google</button>
     <div class="sidebar-foot">
       <span class="sync-dot" id="syncDot"></span>
       <span id="syncLabel">conectando…</span>
@@ -314,6 +318,7 @@
       <div class="sub" id="bandSub">O repertório de cada banda fica separado e sincronizado na nuvem.</div>
       <div class="actions" id="bandActions" style="display:none;">
         <button class="btn btn-primary" id="btnAddSong">+ Adicionar música</button>
+        <button class="btn" id="btnExportPlaylist">↥ Exportar p/ YouTube Music</button>
         <button class="btn" id="btnRenameBand">Renomear banda</button>
       </div>
     </div>
@@ -332,6 +337,7 @@
     <button class="icon-btn" id="btnPrev" title="Anterior">⏮</button>
     <button class="icon-btn" id="btnPlayPause" title="Pausar/Tocar">⏸</button>
     <button class="icon-btn" id="btnNext" title="Próxima">⏭</button>
+    <a class="icon-btn" id="btnOpenYtApp" title="Abrir no app do YouTube (toca com a tela apagada)" target="_blank" rel="noopener">↗</a>
     <button class="icon-btn" id="btnClosePlayer" title="Fechar">✕</button>
   </div>
 </div>
@@ -369,6 +375,7 @@
       <div class="tabs">
         <button class="tab-btn active" data-tab="search">Buscar no YouTube</button>
         <button class="tab-btn" data-tab="link">Colar link</button>
+        <button class="tab-btn" data-tab="import">Importar playlist</button>
       </div>
 
       <div id="tab-search">
@@ -386,11 +393,58 @@
         </div>
         <button class="btn btn-primary" id="btnUseLink">Usar este link</button>
       </div>
+
+      <div id="tab-import" style="display:none;">
+        <div class="field">
+          <label>Link da playlist (YouTube ou YouTube Music)</label>
+          <input type="text" id="ytPlaylistInput" placeholder="https://music.youtube.com/playlist?list=...">
+        </div>
+        <p style="font-size:12px; color:var(--text-faint); margin:-6px 0 12px;">Playlists privadas exigem estar conectado com o Google (botão na lateral).</p>
+        <button class="btn btn-primary" id="btnFetchPlaylist">Buscar playlist</button>
+        <div id="importPlaylistArea" style="display:none; margin-top:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="font-size:12px; color:var(--text-faint);" id="importCountLabel">0 músicas encontradas</span>
+            <button class="btn btn-ghost" id="btnToggleSelectAll" style="padding:4px 8px; font-size:12px;">Desmarcar todas</button>
+          </div>
+          <div class="yt-results" id="importResults"></div>
+          <button class="btn btn-primary" id="btnAddSelected" style="margin-top:12px; width:100%; justify-content:center;">Adicionar selecionadas ao repertório</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- ============ MODAL: editar música ============ -->
+<!-- ============ MODAL: exportar playlist ============ -->
+<div class="overlay" id="exportPlaylistModal" style="display:none;">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Exportar repertório para o YouTube Music</h3>
+      <button class="modal-close" data-close="exportPlaylistModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Nome da playlist</label>
+        <input type="text" id="exportPlaylistName">
+      </div>
+      <p style="font-size:12px; color:var(--text-faint); margin-top:-4px;">
+        Cria uma playlist nova na sua conta do Google com todas as músicas do repertório desta banda, na ordem do setlist. Ela aparece tanto no YouTube quanto no YouTube Music, como privada por padrão.
+      </p>
+      <div id="exportProgress" style="display:none; margin-top:16px;">
+        <div style="font-size:13px; color:var(--text-muted);" id="exportProgressText">Criando playlist...</div>
+        <div style="height:6px; background:var(--surface-2); border-radius:4px; margin-top:8px; overflow:hidden;">
+          <div id="exportProgressBar" style="height:100%; width:0%; background:var(--amber); transition:width .2s;"></div>
+        </div>
+      </div>
+      <div id="exportSuccess" style="display:none; margin-top:16px; padding:12px; border:1px solid rgba(111,207,151,.4); border-radius:8px; background:rgba(111,207,151,.08);">
+        Playlist criada! <a href="#" id="exportSuccessLink" target="_blank" rel="noopener" style="color:var(--ok); text-decoration:underline;">Abrir no YouTube Music ↗</a>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="exportPlaylistModal">Fechar</button>
+      <button class="btn btn-primary" id="btnStartExport">Criar playlist</button>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="editSongModal" style="display:none;">
   <div class="modal">
     <div class="modal-head">
@@ -440,17 +494,24 @@
 //    → Build → Authentication → Sign-in method → ative "Anônimo"
 //    → Configurações do projeto → Seus apps → Web → copie o config abaixo
 const firebaseConfig = {
-  apiKey: "AIzaSyCH0fOy1On9hvaTzS-qN6BCEAM4IAYKt7A",
-  authDomain: "repertorio-diogo.firebaseapp.com",
-  projectId: "repertorio-diogo",
-  storageBucket: "repertorio-diogo.firebasestorage.app",
-  messagingSenderId: "328770029195",
-  appId: "1:328770029195:web:b7be622a04ea1b3552368e"
+  apiKey: "COLE_SUA_API_KEY_AQUI",
+  authDomain: "SEU_PROJETO.firebaseapp.com",
+  projectId: "SEU_PROJETO",
+  storageBucket: "SEU_PROJETO.appspot.com",
+  messagingSenderId: "SEU_SENDER_ID",
+  appId: "SEU_APP_ID"
 };
 
 // 2) YouTube Data API v3: crie uma chave em https://console.cloud.google.com/apis/credentials
 //    (ative a "YouTube Data API v3" no mesmo projeto antes de gerar a chave)
-const YOUTUBE_API_KEY = "AIzaSyALMc5v8YooqEnXh7h72PfkIIZbJailim8";
+const YOUTUBE_API_KEY = "COLE_SUA_CHAVE_YOUTUBE_AQUI";
+
+// 3) Google OAuth Client ID: para exportar/importar playlists reais do YouTube Music,
+//    crie em https://console.cloud.google.com/apis/credentials → Criar credenciais → ID do cliente OAuth
+//    → tipo "Aplicativo da Web" → em "Origens JavaScript autorizadas" adicione a URL onde o app está publicado
+//    (ex: https://diogopq.github.io). Veja o README para o passo a passo completo, incluindo a
+//    tela de consentimento OAuth.
+const GOOGLE_CLIENT_ID = "COLE_SEU_CLIENT_ID_AQUI.apps.googleusercontent.com";
 
 /* Regras do Firestore sugeridas (cole em Firestore → Regras):
 rules_version = '2';
@@ -498,6 +559,54 @@ btnInstallApp.addEventListener('click', async () => {
 window.addEventListener('appinstalled', () => {
   btnInstallApp.style.display = 'none';
   toast('App instalado com sucesso!');
+});
+
+/* =========================================================================
+   GOOGLE OAUTH (login para criar/ler playlists no YouTube/YouTube Music)
+   ========================================================================= */
+let googleAccessToken = null;
+let googleTokenClient = null;
+const btnGoogleAuth = document.getElementById('btnGoogleAuth');
+
+function updateGoogleAuthUI(){
+  btnGoogleAuth.textContent = googleAccessToken ? '✓ Google conectado' : '🔗 Conectar com Google';
+}
+
+function initGoogleAuth(){
+  if (GOOGLE_CLIENT_ID.includes('328770029195-9sfb9efnu6hqio602co5usqbfh4ols9q.apps.googleusercontent.com')){
+    return; // não configurado ainda — botão simplesmente avisa ao clicar
+  }
+  if (!window.google || !google.accounts || !google.accounts.oauth2){
+    setTimeout(initGoogleAuth, 300);
+    return;
+  }
+  googleTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/youtube',
+    callback: (resp) => {
+      if (resp.error){
+        toast('Não foi possível conectar com o Google.');
+        return;
+      }
+      googleAccessToken = resp.access_token;
+      updateGoogleAuthUI();
+      toast('Conectado com o Google!');
+    }
+  });
+}
+window.addEventListener('load', initGoogleAuth);
+
+btnGoogleAuth.addEventListener('click', ()=>{
+  if (GOOGLE_CLIENT_ID.includes('328770029195-9sfb9efnu6hqio602co5usqbfh4ols9q.apps.googleusercontent.com')){
+    toast('Configure o GOOGLE_CLIENT_ID no código para usar exportar/importar playlist.');
+    return;
+  }
+  if (!googleTokenClient){
+    toast('Carregando login do Google, tente de novo em instantes…');
+    initGoogleAuth();
+    return;
+  }
+  googleTokenClient.requestAccessToken({ prompt: googleAccessToken ? '' : 'consent' });
 });
 
 /* =========================================================================
@@ -730,6 +839,7 @@ function renderSongs(){
       </div>
       <div class="song-actions">
         <button class="icon-btn play-btn" title="Tocar" data-act="play">▶</button>
+        <a class="icon-btn" title="Abrir no app do YouTube (toca com a tela apagada)" href="https://www.youtube.com/watch?v=${escapeAttr(song.videoId)}" target="_blank" rel="noopener">↗</a>
         <button class="icon-btn" title="Subir" data-act="up">↑</button>
         <button class="icon-btn" title="Descer" data-act="down">↓</button>
         <button class="icon-btn" title="Editar" data-act="edit">✎</button>
@@ -798,6 +908,14 @@ document.getElementById('btnAddSong').addEventListener('click', ()=>{
   document.getElementById('ytSearchInput').value = '';
   document.getElementById('ytResults').innerHTML = '';
   document.getElementById('ytLinkInput').value = '';
+  document.getElementById('ytPlaylistInput').value = '';
+  document.getElementById('importPlaylistArea').style.display = 'none';
+  document.getElementById('importResults').innerHTML = '';
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelector('.tab-btn[data-tab="search"]').classList.add('active');
+  document.getElementById('tab-search').style.display = 'block';
+  document.getElementById('tab-link').style.display = 'none';
+  document.getElementById('tab-import').style.display = 'none';
   openModal('addSongModal');
   document.getElementById('ytSearchInput').focus();
 });
@@ -808,6 +926,7 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     btn.classList.add('active');
     document.getElementById('tab-search').style.display = btn.dataset.tab === 'search' ? 'block' : 'none';
     document.getElementById('tab-link').style.display = btn.dataset.tab === 'link' ? 'block' : 'none';
+    document.getElementById('tab-import').style.display = btn.dataset.tab === 'import' ? 'block' : 'none';
   });
 });
 
@@ -904,6 +1023,239 @@ async function addSongFromYoutube({videoId, title, artist, thumb}){
 }
 
 /* =========================================================================
+   IMPORTAR PLAYLIST (YouTube / YouTube Music → repertório da banda)
+   ========================================================================= */
+let importCandidates = []; // [{videoId, title, artist, thumb, selected}]
+
+function extractPlaylistId(input){
+  const trimmed = input.trim();
+  const m = trimmed.match(/[?&]list=([\w-]+)/);
+  if (m) return m[1];
+  if (/^[\w-]{10,}$/.test(trimmed)) return trimmed; // já parece ser um ID puro
+  return null;
+}
+
+async function fetchPlaylistItems(playlistId){
+  const items = [];
+  let pageToken = '';
+  const maxPages = 4; // até ~200 músicas por importação
+  for (let page = 0; page < maxPages; page++){
+    const params = new URLSearchParams({
+      part: 'snippet',
+      playlistId,
+      maxResults: '50'
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+    if (googleAccessToken){
+      // com login, dá pra ler playlists privadas também
+    } else {
+      params.set('key', YOUTUBE_API_KEY);
+    }
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${params.toString()}`, {
+      headers: googleAccessToken ? { Authorization: `Bearer ${googleAccessToken}` } : {}
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || 'Erro ao buscar playlist');
+    (data.items || []).forEach(item=>{
+      const snip = item.snippet;
+      if (!snip || !snip.resourceId || snip.resourceId.kind !== 'youtube#video') return;
+      if (snip.title === 'Private video' || snip.title === 'Deleted video') return;
+      items.push({
+        videoId: snip.resourceId.videoId,
+        title: snip.title,
+        artist: snip.videoOwnerChannelTitle || snip.channelTitle || '',
+        thumb: snip.thumbnails?.medium?.url || snip.thumbnails?.default?.url || ''
+      });
+    });
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+  }
+  return items;
+}
+
+function renderImportResults(){
+  const el = document.getElementById('importResults');
+  el.innerHTML = '';
+  importCandidates.forEach((cand, i)=>{
+    const div = document.createElement('div');
+    div.className = 'yt-result';
+    div.innerHTML = `
+      <input type="checkbox" ${cand.selected ? 'checked' : ''} style="flex-shrink:0; width:16px; height:16px; accent-color:var(--amber);">
+      <img src="${cand.thumb || ''}" alt="">
+      <div>
+        <div class="yt-title">${escapeHtml(cand.title)}</div>
+        <div class="yt-channel">${escapeHtml(cand.artist)}</div>
+      </div>
+    `;
+    const checkbox = div.querySelector('input');
+    checkbox.addEventListener('change', ()=>{ importCandidates[i].selected = checkbox.checked; });
+    div.addEventListener('click', (e)=>{
+      if (e.target === checkbox) return;
+      checkbox.checked = !checkbox.checked;
+      importCandidates[i].selected = checkbox.checked;
+    });
+    el.appendChild(div);
+  });
+  document.getElementById('importCountLabel').textContent = `${importCandidates.length} música(s) encontrada(s)`;
+}
+
+document.getElementById('btnFetchPlaylist').addEventListener('click', async ()=>{
+  const raw = document.getElementById('ytPlaylistInput').value;
+  const playlistId = extractPlaylistId(raw);
+  if (!playlistId) return toast('Não consegui identificar o ID da playlist nesse link.');
+  if (!googleAccessToken && (!YOUTUBE_API_KEY || YOUTUBE_API_KEY.includes('COLE_'))){
+    return toast('Configure YOUTUBE_API_KEY ou conecte com o Google para importar.');
+  }
+  const btn = document.getElementById('btnFetchPlaylist');
+  btn.textContent = 'Buscando...';
+  btn.disabled = true;
+  try {
+    const items = await fetchPlaylistItems(playlistId);
+    importCandidates = items.map(it => ({ ...it, selected: true }));
+    document.getElementById('importPlaylistArea').style.display = 'block';
+    document.getElementById('btnToggleSelectAll').textContent = 'Desmarcar todas';
+    if (!items.length) toast('Nenhuma música encontrada — confira se a playlist é pública ou se você está conectado com o Google.');
+    renderImportResults();
+  } catch(e){
+    console.error(e);
+    toast('Erro ao buscar a playlist: ' + e.message);
+  } finally {
+    btn.textContent = 'Buscar playlist';
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('btnToggleSelectAll').addEventListener('click', ()=>{
+  const allSelected = importCandidates.every(c=>c.selected);
+  importCandidates.forEach(c => c.selected = !allSelected);
+  document.getElementById('btnToggleSelectAll').textContent = allSelected ? 'Selecionar todas' : 'Desmarcar todas';
+  renderImportResults();
+});
+
+document.getElementById('btnAddSelected').addEventListener('click', async ()=>{
+  if (!currentBandId) return toast('Selecione uma banda primeiro.');
+  const selected = importCandidates.filter(c=>c.selected);
+  if (!selected.length) return toast('Selecione ao menos uma música.');
+  const btn = document.getElementById('btnAddSelected');
+  btn.disabled = true;
+  let order = songs.length ? Math.max(...songs.map(s=>s.order||0)) + 1 : 0;
+  let added = 0;
+  for (const cand of selected){
+    btn.textContent = `Adicionando ${added+1}/${selected.length}...`;
+    try {
+      await addDoc(collection(db, 'bands', currentBandId, 'songs'), {
+        videoId: cand.videoId, title: cand.title, artist: cand.artist, thumb: cand.thumb,
+        tom:'', cifra:'', obs:'', order: order++, createdAt: serverTimestamp()
+      });
+      added++;
+    } catch(e){ console.error(e); }
+  }
+  btn.disabled = false;
+  btn.textContent = 'Adicionar selecionadas ao repertório';
+  closeModal('addSongModal');
+  toast(`${added} música(s) adicionada(s) ao repertório!`);
+});
+
+/* =========================================================================
+   EXPORTAR REPERTÓRIO → playlist no YouTube Music
+   ========================================================================= */
+document.getElementById('btnExportPlaylist').addEventListener('click', ()=>{
+  const band = bands.find(b=>b.id===currentBandId);
+  if (!band) return;
+  if (!songs.length) return toast('O repertório dessa banda está vazio.');
+  document.getElementById('exportPlaylistName').value = `Repertório — ${band.name}`;
+  document.getElementById('exportProgress').style.display = 'none';
+  document.getElementById('exportSuccess').style.display = 'none';
+  document.getElementById('exportProgressBar').style.width = '0%';
+  document.getElementById('btnStartExport').style.display = 'inline-flex';
+  openModal('exportPlaylistModal');
+});
+
+document.getElementById('btnStartExport').addEventListener('click', async ()=>{
+  if (!googleAccessToken){
+    toast('Conecte sua conta Google primeiro (botão na lateral).');
+    return;
+  }
+  const band = bands.find(b=>b.id===currentBandId);
+  const name = document.getElementById('exportPlaylistName').value.trim() || `Repertório — ${band?.name || ''}`;
+  const btn = document.getElementById('btnStartExport');
+  const progressWrap = document.getElementById('exportProgress');
+  const progressText = document.getElementById('exportProgressText');
+  const progressBar = document.getElementById('exportProgressBar');
+
+  btn.disabled = true;
+  progressWrap.style.display = 'block';
+  progressText.textContent = 'Criando playlist...';
+  progressBar.style.width = '5%';
+
+  try {
+    const createRes = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet,status', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${googleAccessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        snippet: {
+          title: name,
+          description: `Repertório da banda "${band?.name || ''}" — exportado do app Setlist.`
+        },
+        status: { privacyStatus: 'private' }
+      })
+    });
+    const createData = await createRes.json();
+    if (createData.error){
+      if (createRes.status === 401){
+        toast('Sua conexão com o Google expirou — clique em "Conectar com Google" de novo.');
+        googleAccessToken = null;
+        updateGoogleAuthUI();
+      } else {
+        toast('Erro ao criar a playlist: ' + createData.error.message);
+      }
+      btn.disabled = false;
+      return;
+    }
+    const playlistId = createData.id;
+
+    let ok = 0;
+    for (let i = 0; i < songs.length; i++){
+      const song = songs[i];
+      progressText.textContent = `Adicionando ${i+1}/${songs.length}: ${song.title}`;
+      progressBar.style.width = `${5 + Math.round(((i+1)/songs.length) * 90)}%`;
+      try {
+        const itemRes = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${googleAccessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            snippet: {
+              playlistId,
+              resourceId: { kind: 'youtube#video', videoId: song.videoId }
+            }
+          })
+        });
+        const itemData = await itemRes.json();
+        if (!itemData.error) ok++;
+      } catch(e){ console.error(e); }
+    }
+
+    progressBar.style.width = '100%';
+    progressText.textContent = `Pronto! ${ok}/${songs.length} música(s) adicionadas.`;
+    document.getElementById('exportSuccessLink').href = `https://music.youtube.com/playlist?list=${playlistId}`;
+    document.getElementById('exportSuccess').style.display = 'block';
+    btn.style.display = 'none';
+    toast('Playlist criada no YouTube Music!');
+  } catch(e){
+    console.error(e);
+    toast('Erro inesperado ao exportar a playlist.');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* =========================================================================
    PLAYER (YouTube IFrame API)
    ========================================================================= */
 let ytPlayer = null;
@@ -918,8 +1270,14 @@ window.onYouTubeIframeAPIReady = function(){
     events: {
       onStateChange: (e)=>{
         if (e.data === YT.PlayerState.ENDED) nextSong();
-        if (e.data === YT.PlayerState.PLAYING) document.getElementById('btnPlayPause').textContent = '⏸';
-        if (e.data === YT.PlayerState.PAUSED) document.getElementById('btnPlayPause').textContent = '▶';
+        if (e.data === YT.PlayerState.PLAYING){
+          document.getElementById('btnPlayPause').textContent = '⏸';
+          setMediaSessionPlaybackState('playing');
+        }
+        if (e.data === YT.PlayerState.PAUSED){
+          document.getElementById('btnPlayPause').textContent = '▶';
+          setMediaSessionPlaybackState('paused');
+        }
       }
     }
   });
@@ -930,6 +1288,31 @@ window.onYouTubeIframeAPIReady = function(){
   document.head.appendChild(tag);
 })();
 
+/* ---------- Media Session (controles na tela de bloqueio/notificação) ---------- */
+let bgPlaybackWarned = false;
+
+function setMediaSessionPlaybackState(state){
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
+}
+
+function updateMediaSession(song){
+  if (!('mediaSession' in navigator)) return;
+  const band = bands.find(b=>b.id===currentBandId);
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: song.title || 'Música',
+    artist: song.artist || '',
+    album: band ? band.name : '',
+    artwork: song.thumb ? [
+      { src: song.thumb, sizes: '320x180', type: 'image/jpeg' },
+      { src: song.thumb, sizes: '120x90', type: 'image/jpeg' }
+    ] : []
+  });
+  navigator.mediaSession.setActionHandler('play', ()=> ytPlayer && ytPlayer.playVideo());
+  navigator.mediaSession.setActionHandler('pause', ()=> ytPlayer && ytPlayer.pauseVideo());
+  navigator.mediaSession.setActionHandler('previoustrack', prevSong);
+  navigator.mediaSession.setActionHandler('nexttrack', nextSong);
+}
+
 function playSong(index){
   const song = songs[index];
   if (!song) return;
@@ -937,7 +1320,9 @@ function playSong(index){
   document.getElementById('playerTitle').textContent = song.title;
   document.getElementById('playerSub').textContent = song.artist || '';
   document.getElementById('playerBar').classList.add('open');
+  document.getElementById('btnOpenYtApp').href = `https://www.youtube.com/watch?v=${encodeURIComponent(song.videoId)}`;
   renderSongs();
+  updateMediaSession(song);
   const tryPlay = ()=>{
     if (ytApiReady && ytPlayer && ytPlayer.loadVideoById){
       ytPlayer.loadVideoById(song.videoId);
@@ -946,6 +1331,10 @@ function playSong(index){
     }
   };
   tryPlay();
+  if (!bgPlaybackWarned){
+    bgPlaybackWarned = true;
+    toast('Com a tela apagada o áudio pode parar — use o botão ↗ pra abrir no app do YouTube se precisar tocar em segundo plano.');
+  }
 }
 
 function nextSong(){
@@ -971,6 +1360,7 @@ document.getElementById('btnClosePlayer').addEventListener('click', ()=>{
   if (ytPlayer && ytPlayer.stopVideo) ytPlayer.stopVideo();
   currentVideo = null;
   document.getElementById('playerBar').classList.remove('open');
+  setMediaSessionPlaybackState('none');
   renderSongs();
 });
 
