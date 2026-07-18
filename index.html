@@ -273,6 +273,63 @@
   }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
+  /* ---------- Lock screen ---------- */
+  #lockScreen{
+    position:fixed; inset:0; z-index:999;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(245,166,35,.12), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 10%, rgba(79,182,232,.08), transparent 55%),
+      var(--bg);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  #lockScreen.hidden{ display:none; }
+  .lock-card{ width:100%; max-width:340px; text-align:center; }
+  .lock-card .dot{
+    width:12px; height:12px; border-radius:50%; background:var(--amber); margin:0 auto 18px;
+    box-shadow:0 0 20px 4px rgba(245,166,35,.65);
+  }
+  .lock-card h2{ font-size:26px; margin:0 0 6px; }
+  .lock-card p{ color:var(--text-muted); font-size:13px; margin:0 0 22px; }
+  .lock-card input{
+    width:100%; background:var(--surface); border:1px solid var(--border); border-radius:8px;
+    padding:13px 14px; color:var(--text); font-size:16px; text-align:center; letter-spacing:.05em;
+    font-family:'JetBrains Mono'; margin-bottom:12px;
+  }
+  .lock-card input:focus{ outline:none; border-color:var(--amber); }
+  .lock-card input.shake{ animation:shake .35s; border-color:var(--danger); }
+  @keyframes shake{ 0%,100%{transform:translateX(0);} 25%{transform:translateX(-6px);} 75%{transform:translateX(6px);} }
+  .lock-card .btn-primary{ width:100%; justify-content:center; padding:12px; font-size:14px; }
+  .lock-error{ color:var(--danger); font-size:12.5px; margin-top:12px; min-height:16px; }
+
+  body.locked #app, body.locked .player-bar, body.locked .toast{ display:none !important; }
+
+  /* ---------- Setlist selection mode ---------- */
+  .select-bar{
+    display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;
+  }
+  .song-row.select-mode{ grid-template-columns:24px 34px 46px 1fr auto; }
+  .song-check{
+    width:17px; height:17px; accent-color:var(--amber); cursor:pointer;
+  }
+  .floating-bar{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(140%);
+    background:var(--surface-2); border:1px solid var(--amber); border-radius:30px;
+    padding:10px 10px 10px 20px; display:flex; align-items:center; gap:14px;
+    box-shadow:var(--shadow); z-index:95; transition:transform .25s ease;
+  }
+  .floating-bar.open{ transform:translateX(-50%) translateY(0); }
+  .floating-bar span{ font-size:13px; color:var(--text); white-space:nowrap; }
+  .show-setlists{ margin-top:34px; }
+  .show-setlists h3{ font-size:14px; color:var(--text-faint); margin-bottom:10px; letter-spacing:.05em; }
+  .show-setlist-item{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--surface); border:1px solid var(--border-soft); border-radius:8px;
+    padding:10px 14px; margin-bottom:8px; font-size:13px;
+  }
+  .show-setlist-item .ssi-name{ font-weight:500; }
+  .show-setlist-item .ssi-meta{ color:var(--text-faint); font-size:11.5px; margin-top:2px; }
+  .show-setlist-item .ssi-actions{ display:flex; gap:4px; flex-shrink:0; }
+
   /* ---------- Mobile ---------- */
   @media (max-width: 860px){
     #app{ flex-direction:column; }
@@ -288,7 +345,18 @@
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
-<body>
+<body class="locked">
+
+<div id="lockScreen">
+  <div class="lock-card">
+    <div class="dot"></div>
+    <h2>Setlist</h2>
+    <p>Acesso restrito. Digite a senha para continuar.</p>
+    <input type="password" id="lockPasswordInput" placeholder="Senha" autocomplete="off">
+    <button class="btn btn-primary" id="btnUnlock">Entrar</button>
+    <div class="lock-error" id="lockError"></div>
+  </div>
+</div>
 
 <div id="app">
   <aside class="sidebar">
@@ -307,6 +375,7 @@
     <div class="sidebar-foot">
       <span class="sync-dot" id="syncDot"></span>
       <span id="syncLabel">conectando…</span>
+      <button class="icon-btn" id="btnLockApp" title="Bloquear app" style="margin-left:auto; width:26px; height:26px; font-size:12px;">🔒</button>
     </div>
   </aside>
 
@@ -319,11 +388,13 @@
       <div class="actions" id="bandActions" style="display:none;">
         <button class="btn btn-primary" id="btnAddSong">+ Adicionar música</button>
         <button class="btn" id="btnExportPlaylist">↥ Exportar p/ YouTube Music</button>
+        <button class="btn" id="btnSelectMode">☑ Montar setlist de show</button>
         <button class="btn" id="btnRenameBand">Renomear banda</button>
       </div>
     </div>
 
     <div id="content"></div>
+    <div id="showSetlistsArea"></div>
   </main>
 </div>
 
@@ -343,6 +414,12 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="floating-bar" id="floatingBar">
+  <span id="floatingCount">0 selecionadas</span>
+  <button class="btn btn-ghost" id="btnCancelSelect">Cancelar</button>
+  <button class="btn btn-primary" id="btnGenerateShowSetlist">Gerar repertório específico</button>
+</div>
 
 <!-- ============ MODAL: nova/renomear banda ============ -->
 <div class="overlay" id="bandModal" style="display:none;">
@@ -445,6 +522,38 @@
     </div>
   </div>
 </div>
+
+<!-- ============ MODAL: repertório específico de show ============ -->
+<div class="overlay" id="showSetlistModal" style="display:none;">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Gerar repertório específico</h3>
+      <button class="modal-close" data-close="showSetlistModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Nome do show / setlist</label>
+        <input type="text" id="showSetlistName" placeholder="Ex: Show Bar do Zé — 20/07">
+      </div>
+      <p style="font-size:12px; color:var(--text-faint); margin-top:-4px;">
+        Cria uma playlist nova no YouTube Music só com as <strong id="showSetlistSongCount">0</strong> músicas selecionadas, na ordem em que aparecem no repertório.
+      </p>
+      <div id="showSetlistProgress" style="display:none; margin-top:16px;">
+        <div style="font-size:13px; color:var(--text-muted);" id="showSetlistProgressText">Criando playlist...</div>
+        <div style="height:6px; background:var(--surface-2); border-radius:4px; margin-top:8px; overflow:hidden;">
+          <div id="showSetlistProgressBar" style="height:100%; width:0%; background:var(--amber); transition:width .2s;"></div>
+        </div>
+      </div>
+      <div id="showSetlistSuccess" style="display:none; margin-top:16px; padding:12px; border:1px solid rgba(111,207,151,.4); border-radius:8px; background:rgba(111,207,151,.08);">
+        Playlist criada! <a href="#" id="showSetlistSuccessLink" target="_blank" rel="noopener" style="color:var(--ok); text-decoration:underline;">Abrir no YouTube Music ↗</a>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="showSetlistModal">Fechar</button>
+      <button class="btn btn-primary" id="btnStartShowSetlist">Criar playlist</button>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="editSongModal" style="display:none;">
   <div class="modal">
     <div class="modal-head">
@@ -513,6 +622,10 @@ const YOUTUBE_API_KEY = "AIzaSyALMc5v8YooqEnXh7h72PfkIIZbJailim8";
 //    tela de consentimento OAuth.
 const GOOGLE_CLIENT_ID = "328770029195-9sfb9efnu6hqio602co5usqbfh4ols9q.apps.googleusercontent.com";
 
+// 4) Senha de acesso: gere o hash da sua senha rodando isto no console do navegador (F12 → Console)
+
+const APP_PASSWORD_HASH = "$2a$12$N9FIpcFq8L9oK4p9g8IxWetNBqfATlPRsA73Sg2EQD9ZebE4rw5jC";
+
 /* Regras do Firestore sugeridas (cole em Firestore → Regras):
 rules_version = '2';
 service cloud.firestore {
@@ -522,10 +635,77 @@ service cloud.firestore {
       match /songs/{songId} {
         allow read, write: if request.auth != null;
       }
+      match /showSetlists/{setlistId} {
+        allow read, write: if request.auth != null;
+      }
     }
   }
 }
 */
+
+/* =========================================================================
+   TRAVA DE SENHA
+   ========================================================================= */
+const LOCK_STORAGE_KEY = 'setlist_unlocked_v1';
+
+async function sha256Hex(text){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function unlockApp(){
+  document.body.classList.remove('locked');
+  document.getElementById('lockScreen').classList.add('hidden');
+}
+
+(function initLock(){
+  if (!APP_PASSWORD_HASH){
+    unlockApp();
+    return;
+  }
+  if (localStorage.getItem(LOCK_STORAGE_KEY) === '1'){
+    unlockApp();
+    return;
+  }
+  // permanece travado — aguarda o envio da senha
+  const input = document.getElementById('lockPasswordInput');
+  const errorEl = document.getElementById('lockError');
+  const btn = document.getElementById('btnUnlock');
+
+  async function tryUnlock(){
+    const val = input.value;
+    if (!val) return;
+    const hash = await sha256Hex(val);
+    if (hash === APP_PASSWORD_HASH){
+      localStorage.setItem(LOCK_STORAGE_KEY, '1');
+      errorEl.textContent = '';
+      unlockApp();
+    } else {
+      errorEl.textContent = 'Senha incorreta.';
+      input.classList.remove('shake');
+      void input.offsetWidth;
+      input.classList.add('shake');
+      input.value = '';
+      input.focus();
+    }
+  }
+  btn.addEventListener('click', tryUnlock);
+  input.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') tryUnlock(); });
+  setTimeout(()=> input.focus(), 200);
+})();
+
+document.getElementById('btnLockApp').addEventListener('click', ()=>{
+  if (!APP_PASSWORD_HASH){
+    toast('Nenhuma senha configurada (APP_PASSWORD_HASH vazio no código).');
+    return;
+  }
+  if (!confirm('Bloquear o app agora? Você vai precisar digitar a senha de novo.')) return;
+  localStorage.removeItem(LOCK_STORAGE_KEY);
+  document.body.classList.add('locked');
+  document.getElementById('lockScreen').classList.remove('hidden');
+  document.getElementById('lockPasswordInput').value = '';
+  setTimeout(()=> document.getElementById('lockPasswordInput').focus(), 200);
+});
 
 /* =========================================================================
    PWA: service worker + prompt de instalação
@@ -573,7 +753,7 @@ function updateGoogleAuthUI(){
 }
 
 function initGoogleAuth(){
-  if (GOOGLE_CLIENT_ID.includes('328770029195-9sfb9efnu6hqio602co5usqbfh4ols9q.apps.googleusercontent.com')){
+  if (GOOGLE_CLIENT_ID.includes('COLE_SEU_CLIENT_ID')){
     return; // não configurado ainda — botão simplesmente avisa ao clicar
   }
   if (!window.google || !google.accounts || !google.accounts.oauth2){
@@ -597,7 +777,7 @@ function initGoogleAuth(){
 window.addEventListener('load', initGoogleAuth);
 
 btnGoogleAuth.addEventListener('click', ()=>{
-  if (GOOGLE_CLIENT_ID.includes('328770029195-9sfb9efnu6hqio602co5usqbfh4ols9q.apps.googleusercontent.com')){
+  if (GOOGLE_CLIENT_ID.includes('COLE_SEU_CLIENT_ID')){
     toast('Configure o GOOGLE_CLIENT_ID no código para usar exportar/importar playlist.');
     return;
   }
@@ -660,6 +840,10 @@ let currentBandId = null;
 let songs = [];           // músicas da banda selecionada
 let songsUnsub = null;
 let editingSongId = null;
+let selectMode = false;
+let selectedSongIds = new Set();
+let showSetlists = [];        // repertórios específicos gerados para a banda atual
+let showSetlistsUnsub = null;
 
 /* =========================================================================
    TOAST
@@ -739,9 +923,11 @@ function renderBandList(){
 
 function selectBand(bandId){
   currentBandId = bandId;
+  exitSelectMode();
   renderBandList();
   updateBandHeader();
   listenSongs(bandId);
+  listenShowSetlists(bandId);
 }
 
 function updateBandHeader(){
@@ -818,14 +1004,16 @@ function renderSongs(){
         <button class="btn btn-primary" id="emptyAddSong">+ Adicionar música</button>
       </div>`;
     document.getElementById('emptyAddSong').addEventListener('click', ()=> openModal('addSongModal'));
+    renderShowSetlists();
     return;
   }
   const ul = document.createElement('ul');
   ul.className = 'setlist';
   songs.forEach((song, i)=>{
     const li = document.createElement('li');
-    li.className = 'song-row' + (currentVideo && currentVideo.songId === song.id ? ' playing' : '');
+    li.className = 'song-row' + (selectMode ? ' select-mode' : '') + (currentVideo && currentVideo.songId === song.id ? ' playing' : '');
     li.innerHTML = `
+      ${selectMode ? `<input type="checkbox" class="song-check" data-song-id="${song.id}" ${selectedSongIds.has(song.id) ? 'checked' : ''}>` : ''}
       <span class="song-num">${String(i+1).padStart(2,'0')}</span>
       <img class="song-thumb" src="${song.thumb || ''}" alt="">
       <div class="song-info">
@@ -837,6 +1025,7 @@ function renderSongs(){
         </div>
         ${song.obs ? `<div class="song-obs">${escapeHtml(song.obs)}</div>` : ''}
       </div>
+      ${selectMode ? '' : `
       <div class="song-actions">
         <button class="icon-btn play-btn" title="Tocar" data-act="play">▶</button>
         <a class="icon-btn" title="Abrir no app do YouTube (toca com a tela apagada)" href="https://www.youtube.com/watch?v=${escapeAttr(song.videoId)}" target="_blank" rel="noopener">↗</a>
@@ -844,17 +1033,175 @@ function renderSongs(){
         <button class="icon-btn" title="Descer" data-act="down">↓</button>
         <button class="icon-btn" title="Editar" data-act="edit">✎</button>
         <button class="icon-btn danger" title="Remover" data-act="del">🗑</button>
-      </div>
+      </div>`}
     `;
-    li.querySelector('[data-act="play"]').addEventListener('click', ()=> playSong(i));
-    li.querySelector('[data-act="up"]').addEventListener('click', ()=> reorder(i, -1));
-    li.querySelector('[data-act="down"]').addEventListener('click', ()=> reorder(i, 1));
-    li.querySelector('[data-act="edit"]').addEventListener('click', ()=> openEditSong(song));
-    li.querySelector('[data-act="del"]').addEventListener('click', ()=> removeSong(song));
+    if (selectMode){
+      const checkbox = li.querySelector('.song-check');
+      const toggle = ()=>{
+        if (selectedSongIds.has(song.id)) selectedSongIds.delete(song.id);
+        else selectedSongIds.add(song.id);
+        updateFloatingBar();
+        checkbox.checked = selectedSongIds.has(song.id);
+      };
+      checkbox.addEventListener('click', (e)=> e.stopPropagation());
+      checkbox.addEventListener('change', updateFloatingBar);
+      li.addEventListener('click', (e)=>{ if (e.target !== checkbox) toggle(); });
+    } else {
+      li.querySelector('[data-act="play"]').addEventListener('click', ()=> playSong(i));
+      li.querySelector('[data-act="up"]').addEventListener('click', ()=> reorder(i, -1));
+      li.querySelector('[data-act="down"]').addEventListener('click', ()=> reorder(i, 1));
+      li.querySelector('[data-act="edit"]').addEventListener('click', ()=> openEditSong(song));
+      li.querySelector('[data-act="del"]').addEventListener('click', ()=> removeSong(song));
+    }
     ul.appendChild(li);
   });
   content.innerHTML = '';
   content.appendChild(ul);
+  renderShowSetlists();
+}
+
+/* =========================================================================
+   MONTAR SETLIST DE SHOW (seleção → playlist específica)
+   ========================================================================= */
+const btnSelectMode = document.getElementById('btnSelectMode');
+const floatingBar = document.getElementById('floatingBar');
+
+function updateFloatingBar(){
+  const n = selectedSongIds.size;
+  document.getElementById('floatingCount').textContent = `${n} selecionada${n===1?'':'s'}`;
+  document.getElementById('btnGenerateShowSetlist').disabled = n === 0;
+}
+
+function enterSelectMode(){
+  selectMode = true;
+  selectedSongIds.clear();
+  btnSelectMode.textContent = '✕ Cancelar seleção';
+  floatingBar.classList.add('open');
+  updateFloatingBar();
+  renderSongs();
+}
+
+function exitSelectMode(){
+  selectMode = false;
+  selectedSongIds.clear();
+  btnSelectMode.textContent = '☑ Montar setlist de show';
+  floatingBar.classList.remove('open');
+}
+
+btnSelectMode.addEventListener('click', ()=>{
+  if (selectMode){ exitSelectMode(); renderSongs(); }
+  else enterSelectMode();
+});
+document.getElementById('btnCancelSelect').addEventListener('click', ()=>{
+  exitSelectMode();
+  renderSongs();
+});
+
+document.getElementById('btnGenerateShowSetlist').addEventListener('click', ()=>{
+  if (!selectedSongIds.size) return;
+  document.getElementById('showSetlistName').value = '';
+  document.getElementById('showSetlistSongCount').textContent = String(selectedSongIds.size);
+  document.getElementById('showSetlistProgress').style.display = 'none';
+  document.getElementById('showSetlistSuccess').style.display = 'none';
+  document.getElementById('showSetlistProgressBar').style.width = '0%';
+  document.getElementById('btnStartShowSetlist').style.display = 'inline-flex';
+  openModal('showSetlistModal');
+  document.getElementById('showSetlistName').focus();
+});
+
+document.getElementById('btnStartShowSetlist').addEventListener('click', async ()=>{
+  const name = document.getElementById('showSetlistName').value.trim();
+  if (!name) return toast('Dê um nome pro repertório desse show.');
+  if (!googleAccessToken) return toast('Conecte sua conta Google primeiro (botão na lateral).');
+
+  const selectedSongs = songs.filter(s => selectedSongIds.has(s.id)); // mantém a ordem do setlist
+  const btn = document.getElementById('btnStartShowSetlist');
+  const progressWrap = document.getElementById('showSetlistProgress');
+  const progressText = document.getElementById('showSetlistProgressText');
+  const progressBar = document.getElementById('showSetlistProgressBar');
+
+  btn.disabled = true;
+  progressWrap.style.display = 'block';
+  progressText.textContent = 'Criando playlist...';
+  progressBar.style.width = '5%';
+
+  try {
+    const playlistId = await createYoutubePlaylist(name, `Setlist "${name}" — exportado do app Setlist.`);
+    if (!playlistId){ btn.disabled = false; return; }
+
+    let ok = 0;
+    for (let i = 0; i < selectedSongs.length; i++){
+      const song = selectedSongs[i];
+      progressText.textContent = `Adicionando ${i+1}/${selectedSongs.length}: ${song.title}`;
+      progressBar.style.width = `${5 + Math.round(((i+1)/selectedSongs.length) * 85)}%`;
+      const success = await addVideoToPlaylist(playlistId, song.videoId);
+      if (success) ok++;
+    }
+
+    await addDoc(collection(db, 'bands', currentBandId, 'showSetlists'), {
+      name,
+      songCount: ok,
+      songIds: selectedSongs.map(s=>s.id),
+      playlistId,
+      playlistUrl: `https://music.youtube.com/playlist?list=${playlistId}`,
+      createdAt: serverTimestamp()
+    });
+
+    progressBar.style.width = '100%';
+    progressText.textContent = `Pronto! ${ok}/${selectedSongs.length} música(s) adicionadas.`;
+    document.getElementById('showSetlistSuccessLink').href = `https://music.youtube.com/playlist?list=${playlistId}`;
+    document.getElementById('showSetlistSuccess').style.display = 'block';
+    btn.style.display = 'none';
+    toast('Repertório de show criado!');
+    exitSelectMode();
+    renderSongs();
+  } catch(e){
+    console.error(e);
+    toast('Erro inesperado ao gerar o repertório do show.');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function listenShowSetlists(bandId){
+  if (showSetlistsUnsub) showSetlistsUnsub();
+  const q = query(collection(db, 'bands', bandId, 'showSetlists'), orderBy('createdAt', 'desc'));
+  showSetlistsUnsub = onSnapshot(q, (snap)=>{
+    showSetlists = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    renderShowSetlists();
+  });
+}
+
+function renderShowSetlists(){
+  const area = document.getElementById('showSetlistsArea');
+  if (!currentBandId || !showSetlists.length){ area.innerHTML = ''; return; }
+  const dateFmt = (ts) => {
+    if (!ts || !ts.toDate) return '';
+    return ts.toDate().toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  };
+  area.innerHTML = `
+    <div class="show-setlists">
+      <h3>Repertórios de shows gerados</h3>
+      ${showSetlists.map(s => `
+        <div class="show-setlist-item">
+          <div>
+            <div class="ssi-name">${escapeHtml(s.name)}</div>
+            <div class="ssi-meta">${s.songCount || (s.songIds?.length ?? 0)} música(s) · ${dateFmt(s.createdAt)}</div>
+          </div>
+          <div class="ssi-actions">
+            <a class="icon-btn" title="Abrir no YouTube Music" href="${escapeAttr(s.playlistUrl)}" target="_blank" rel="noopener">↗</a>
+            <button class="icon-btn danger" title="Remover da lista" data-del-setlist="${s.id}">🗑</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  area.querySelectorAll('[data-del-setlist]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if (!confirm('Remover este repertório da lista? (a playlist continua existindo no YouTube Music)')) return;
+      await deleteDoc(doc(db, 'bands', currentBandId, 'showSetlists', btn.dataset.delSetlist));
+    });
+  });
 }
 
 async function reorder(index, dir){
@@ -1159,6 +1506,53 @@ document.getElementById('btnAddSelected').addEventListener('click', async ()=>{
 /* =========================================================================
    EXPORTAR REPERTÓRIO → playlist no YouTube Music
    ========================================================================= */
+
+async function createYoutubePlaylist(title, description){
+  const res = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet,status', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${googleAccessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      snippet: { title, description },
+      status: { privacyStatus: 'private' }
+    })
+  });
+  const data = await res.json();
+  if (data.error){
+    if (res.status === 401){
+      toast('Sua conexão com o Google expirou — clique em "Conectar com Google" de novo.');
+      googleAccessToken = null;
+      updateGoogleAuthUI();
+    } else {
+      toast('Erro ao criar a playlist: ' + data.error.message);
+    }
+    return null;
+  }
+  return data.id;
+}
+
+async function addVideoToPlaylist(playlistId, videoId){
+  try {
+    const res = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${googleAccessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } }
+      })
+    });
+    const data = await res.json();
+    return !data.error;
+  } catch(e){
+    console.error(e);
+    return false;
+  }
+}
+
 document.getElementById('btnExportPlaylist').addEventListener('click', ()=>{
   const band = bands.find(b=>b.id===currentBandId);
   if (!band) return;
@@ -1189,56 +1583,16 @@ document.getElementById('btnStartExport').addEventListener('click', async ()=>{
   progressBar.style.width = '5%';
 
   try {
-    const createRes = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet,status', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${googleAccessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        snippet: {
-          title: name,
-          description: `Repertório da banda "${band?.name || ''}" — exportado do app Setlist.`
-        },
-        status: { privacyStatus: 'private' }
-      })
-    });
-    const createData = await createRes.json();
-    if (createData.error){
-      if (createRes.status === 401){
-        toast('Sua conexão com o Google expirou — clique em "Conectar com Google" de novo.');
-        googleAccessToken = null;
-        updateGoogleAuthUI();
-      } else {
-        toast('Erro ao criar a playlist: ' + createData.error.message);
-      }
-      btn.disabled = false;
-      return;
-    }
-    const playlistId = createData.id;
+    const playlistId = await createYoutubePlaylist(name, `Repertório da banda "${band?.name || ''}" — exportado do app Setlist.`);
+    if (!playlistId){ btn.disabled = false; return; }
 
     let ok = 0;
     for (let i = 0; i < songs.length; i++){
       const song = songs[i];
       progressText.textContent = `Adicionando ${i+1}/${songs.length}: ${song.title}`;
       progressBar.style.width = `${5 + Math.round(((i+1)/songs.length) * 90)}%`;
-      try {
-        const itemRes = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${googleAccessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            snippet: {
-              playlistId,
-              resourceId: { kind: 'youtube#video', videoId: song.videoId }
-            }
-          })
-        });
-        const itemData = await itemRes.json();
-        if (!itemData.error) ok++;
-      } catch(e){ console.error(e); }
+      const success = await addVideoToPlaylist(playlistId, song.videoId);
+      if (success) ok++;
     }
 
     progressBar.style.width = '100%';
