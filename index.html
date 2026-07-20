@@ -351,10 +351,12 @@
   <div class="lock-card">
     <div class="dot"></div>
     <h2>Setlist</h2>
-    <p>Acesso restrito. Digite a senha para continuar.</p>
-    <input type="password" id="lockPasswordInput" placeholder="Senha" autocomplete="off">
+    <p>Acesso restrito. Entre com sua conta para continuar.</p>
+    <input type="email" id="lockEmailInput" placeholder="E-mail" autocomplete="username">
+    <input type="password" id="lockPasswordInput" placeholder="Senha" autocomplete="current-password">
     <button class="btn btn-primary" id="btnUnlock">Entrar</button>
     <div class="lock-error" id="lockError"></div>
+    <a href="#" id="lockForgotLink" style="display:block; margin-top:14px; font-size:12px; color:var(--text-faint);">Esqueci minha senha</a>
   </div>
 </div>
 
@@ -375,7 +377,7 @@
     <div class="sidebar-foot">
       <span class="sync-dot" id="syncDot"></span>
       <span id="syncLabel">conectando…</span>
-      <button class="icon-btn" id="btnLockApp" title="Bloquear app" style="margin-left:auto; width:26px; height:26px; font-size:12px;">🔒</button>
+      <button class="icon-btn" id="btnLockApp" title="Sair da conta" style="margin-left:auto; width:26px; height:26px; font-size:12px;">🔒</button>
     </div>
   </aside>
 
@@ -600,7 +602,8 @@
 
 // 1) Firebase: crie um projeto em https://console.firebase.google.com
 //    → Build → Firestore Database → criar banco (modo produção)
-//    → Build → Authentication → Sign-in method → ative "Anônimo"
+//    → Build → Authentication → Sign-in method → ative "E-mail/senha"
+//    → Build → Authentication → Users → adicione seu e-mail e uma senha (é o login do app)
 //    → Configurações do projeto → Seus apps → Web → copie o config abaixo
 const firebaseConfig = {
   apiKey: "AIzaSyCH0fOy1On9hvaTzS-qN6BCEAM4IAYKt7A",
@@ -622,21 +625,19 @@ const YOUTUBE_API_KEY = "AIzaSyALMc5v8YooqEnXh7h72PfkIIZbJailim8";
 //    tela de consentimento OAuth.
 const GOOGLE_CLIENT_ID = "328770029195-9sfb9efnu6hqio602co5usqbfh4ols9q.apps.googleusercontent.com";
 
-// 4) Senha de acesso: gere o hash da sua senha rodando isto no console do navegador (F12 → Console)
-
-const APP_PASSWORD_HASH = "003b6fcef37954c11d2dee839486db5060995854cddf30b10a399f2f3b9dd3ab";
-
-/* Regras do Firestore sugeridas (cole em Firestore → Regras):
+/* Regras do Firestore — travadas para SÓ o seu usuário (cole em Firestore → Regras):
+   Troque SEU_UID_AQUI pelo UID do usuário que você criar em Authentication → Users
+   (copie o UID na coluna "User UID" depois de criar seu e-mail/senha).
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /bands/{bandId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && request.auth.uid == "SEU_UID_AQUI";
       match /songs/{songId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if request.auth != null && request.auth.uid == "SEU_UID_AQUI";
       }
       match /showSetlists/{setlistId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if request.auth != null && request.auth.uid == "SEU_UID_AQUI";
       }
     }
   }
@@ -644,13 +645,32 @@ service cloud.firestore {
 */
 
 /* =========================================================================
-   TRAVA DE SENHA
+   FIREBASE INIT + LOGIN (e-mail/senha)
    ========================================================================= */
-const LOCK_STORAGE_KEY = 'setlist_unlocked_v1';
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
+  onSnapshot, query, orderBy, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-async function sha256Hex(text){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+let app, db, auth, userReady = false;
+try {
+  app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+  auth = getAuth(app);
+} catch (e) {
+  console.error("Falha ao iniciar Firebase — verifique o firebaseConfig.", e);
+}
+
+const syncDot = document.getElementById('syncDot');
+const syncLabel = document.getElementById('syncLabel');
+
+function setSyncState(ok, label){
+  syncDot.classList.toggle('off', !ok);
+  syncLabel.textContent = label;
 }
 
 function unlockApp(){
@@ -658,53 +678,96 @@ function unlockApp(){
   document.getElementById('lockScreen').classList.add('hidden');
 }
 
-(function initLock(){
-  if (!APP_PASSWORD_HASH){
-    unlockApp();
-    return;
-  }
-  if (localStorage.getItem(LOCK_STORAGE_KEY) === '1'){
-    unlockApp();
-    return;
-  }
-  // permanece travado — aguarda o envio da senha
-  const input = document.getElementById('lockPasswordInput');
-  const errorEl = document.getElementById('lockError');
-  const btn = document.getElementById('btnUnlock');
-
-  async function tryUnlock(){
-    const val = input.value;
-    if (!val) return;
-    const hash = await sha256Hex(val);
-    if (hash === APP_PASSWORD_HASH){
-      localStorage.setItem(LOCK_STORAGE_KEY, '1');
-      errorEl.textContent = '';
-      unlockApp();
-    } else {
-      errorEl.textContent = 'Senha incorreta.';
-      input.classList.remove('shake');
-      void input.offsetWidth;
-      input.classList.add('shake');
-      input.value = '';
-      input.focus();
-    }
-  }
-  btn.addEventListener('click', tryUnlock);
-  input.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') tryUnlock(); });
-  setTimeout(()=> input.focus(), 200);
-})();
-
-document.getElementById('btnLockApp').addEventListener('click', ()=>{
-  if (!APP_PASSWORD_HASH){
-    toast('Nenhuma senha configurada (APP_PASSWORD_HASH vazio no código).');
-    return;
-  }
-  if (!confirm('Bloquear o app agora? Você vai precisar digitar a senha de novo.')) return;
-  localStorage.removeItem(LOCK_STORAGE_KEY);
+function lockScreenUI(){
   document.body.classList.add('locked');
   document.getElementById('lockScreen').classList.remove('hidden');
-  document.getElementById('lockPasswordInput').value = '';
-  setTimeout(()=> document.getElementById('lockPasswordInput').focus(), 200);
+}
+
+if (auth) {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      userReady = true;
+      unlockApp();
+      setSyncState(true, 'sincronizado');
+      startBandsListener();
+    } else {
+      userReady = false;
+      lockScreenUI();
+      setSyncState(false, 'desconectado');
+      setTimeout(()=> document.getElementById('lockEmailInput')?.focus(), 150);
+    }
+  });
+} else {
+  setSyncState(false, 'configure o firebaseConfig no código');
+  document.getElementById('lockError').textContent = 'Configure o firebaseConfig no código antes de entrar.';
+}
+
+/* ---------- Formulário de login ---------- */
+const lockEmailInput = document.getElementById('lockEmailInput');
+const lockPasswordInput = document.getElementById('lockPasswordInput');
+const lockErrorEl = document.getElementById('lockError');
+const btnUnlock = document.getElementById('btnUnlock');
+
+function loginErrorMessage(code){
+  switch(code){
+    case 'auth/invalid-email': return 'E-mail inválido.';
+    case 'auth/user-not-found':
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password': return 'E-mail ou senha incorretos.';
+    case 'auth/too-many-requests': return 'Muitas tentativas — aguarde um pouco e tente de novo.';
+    default: return 'Não foi possível entrar. Tente de novo.';
+  }
+}
+
+async function tryLogin(){
+  if (!auth) return;
+  const email = lockEmailInput.value.trim();
+  const password = lockPasswordInput.value;
+  if (!email || !password) return;
+  btnUnlock.disabled = true;
+  btnUnlock.textContent = 'Entrando...';
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    lockErrorEl.textContent = '';
+    lockErrorEl.style.color = '';
+  } catch(e){
+    lockErrorEl.style.color = '';
+    lockErrorEl.textContent = loginErrorMessage(e.code);
+    lockPasswordInput.classList.remove('shake');
+    void lockPasswordInput.offsetWidth;
+    lockPasswordInput.classList.add('shake');
+    lockPasswordInput.value = '';
+    lockPasswordInput.focus();
+  } finally {
+    btnUnlock.disabled = false;
+    btnUnlock.textContent = 'Entrar';
+  }
+}
+btnUnlock.addEventListener('click', tryLogin);
+lockPasswordInput.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') tryLogin(); });
+lockEmailInput.addEventListener('keydown', (e)=>{ if (e.key === 'Enter') lockPasswordInput.focus(); });
+
+document.getElementById('lockForgotLink').addEventListener('click', async (e)=>{
+  e.preventDefault();
+  if (!auth) return;
+  const email = lockEmailInput.value.trim();
+  if (!email) { lockErrorEl.textContent = 'Digite seu e-mail acima primeiro.'; return; }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    lockErrorEl.style.color = 'var(--ok)';
+    lockErrorEl.textContent = 'E-mail de redefinição enviado — confira sua caixa de entrada.';
+  } catch(e2){
+    lockErrorEl.style.color = '';
+    lockErrorEl.textContent = loginErrorMessage(e2.code);
+  }
+});
+
+document.getElementById('btnLockApp').addEventListener('click', async ()=>{
+  if (!auth) return;
+  if (!confirm('Sair da sua conta agora? Você vai precisar entrar de novo com e-mail e senha.')) return;
+  await signOut(auth);
+  lockEmailInput.value = '';
+  lockPasswordInput.value = '';
 });
 
 /* =========================================================================
@@ -788,49 +851,6 @@ btnGoogleAuth.addEventListener('click', ()=>{
   }
   googleTokenClient.requestAccessToken({ prompt: googleAccessToken ? '' : 'consent' });
 });
-
-/* =========================================================================
-   FIREBASE INIT
-   ========================================================================= */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
-  onSnapshot, query, orderBy, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
-let app, db, auth, userReady = false;
-try {
-  app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  auth = getAuth(app);
-} catch (e) {
-  console.error("Falha ao iniciar Firebase — verifique o firebaseConfig.", e);
-}
-
-const syncDot = document.getElementById('syncDot');
-const syncLabel = document.getElementById('syncLabel');
-
-function setSyncState(ok, label){
-  syncDot.classList.toggle('off', !ok);
-  syncLabel.textContent = label;
-}
-
-if (auth) {
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      userReady = true;
-      setSyncState(true, 'sincronizado');
-      startBandsListener();
-    }
-  });
-  signInAnonymously(auth).catch((err) => {
-    console.error(err);
-    setSyncState(false, 'erro de conexão — configure o firebaseConfig');
-  });
-} else {
-  setSyncState(false, 'configure o firebaseConfig no código');
-}
 
 /* =========================================================================
    ESTADO
