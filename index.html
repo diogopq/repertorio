@@ -40,9 +40,11 @@
     --shadow: 0 8px 30px rgba(0,0,0,.45);
   }
   *{box-sizing:border-box;}
-  html,body{height:100%;}
+  html{ background:var(--bg); min-height:100%; }
+  html,body{ min-height:100%; }
   body{
     margin:0;
+    min-height:100vh;
     background:
       radial-gradient(ellipse 900px 500px at 15% -10%, rgba(245,166,35,.10), transparent 60%),
       radial-gradient(ellipse 700px 500px at 100% 0%, rgba(79,182,232,.07), transparent 55%),
@@ -177,23 +179,23 @@
     padding:12px 14px;
     display:grid;
     grid-template-columns:34px 46px 1fr auto;
-    align-items:center;
+    align-items:start;
     gap:14px;
     transition:border-color .15s, background .15s;
   }
   .song-row:hover{ border-color:var(--border); }
   .song-row.playing{ border-color:var(--amber); background:linear-gradient(90deg, rgba(245,166,35,.08), transparent 40%); }
-  .song-num{ font-family:'JetBrains Mono'; color:var(--text-faint); font-size:15px; text-align:center; }
+  .song-num{ font-family:'JetBrains Mono'; color:var(--text-faint); font-size:15px; text-align:center; padding-top:12px; }
   .song-thumb{ width:46px; height:46px; border-radius:6px; object-fit:cover; background:var(--surface-2); flex-shrink:0;}
-  .song-info{ min-width:0; }
-  .song-title{ font-size:14.5px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .song-info{ min-width:0; padding-top:1px; }
+  .song-title{ font-size:14.5px; font-weight:500; white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
   .song-meta{ display:flex; align-items:center; gap:8px; margin-top:3px; flex-wrap:wrap; }
-  .song-artist{ font-size:12px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px; }
+  .song-artist{ font-size:12px; color:var(--text-muted); white-space:normal; overflow-wrap:anywhere; }
   .badge{ font-family:'JetBrains Mono'; font-size:11px; padding:1px 7px; border-radius:20px; border:1px solid var(--border); color:var(--text-muted); }
   .badge.tom{ color:var(--blue); border-color:rgba(79,182,232,.4); }
   .badge.cifra{ color:var(--amber); border-color:rgba(245,166,35,.4); cursor:pointer; text-decoration:none;}
   .song-obs{ font-size:11.5px; color:var(--text-faint); margin-top:2px; max-width:520px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .song-actions{ display:flex; align-items:center; gap:2px; }
+  .song-actions{ display:flex; align-items:center; gap:2px; align-self:center; }
   .icon-btn{
     width:32px; height:32px; border-radius:7px; border:1px solid transparent; background:transparent;
     color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px;
@@ -309,7 +311,7 @@
   }
   .song-row.select-mode{ grid-template-columns:24px 34px 46px 1fr auto; }
   .song-check{
-    width:17px; height:17px; accent-color:var(--amber); cursor:pointer;
+    width:17px; height:17px; accent-color:var(--amber); cursor:pointer; align-self:center; margin-top:14px;
   }
   .floating-bar{
     position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(140%);
@@ -338,7 +340,6 @@
     .band-tab{ flex-shrink:0; }
     main{ padding:24px 16px 140px; }
     .song-row{ grid-template-columns:26px 40px 1fr auto; gap:10px; padding:10px; }
-    .song-artist{ max-width:120px; }
     .player-bar{ left:0; padding:10px 14px; }
     .field-row{ grid-template-columns:1fr; }
   }
@@ -1043,7 +1044,7 @@ function renderSongs(){
           ${song.tom ? `<span class="badge tom">${escapeHtml(song.tom)}</span>` : ''}
           ${song.cifra ? `<a class="badge cifra" href="${escapeAttr(song.cifra)}" target="_blank" rel="noopener">cifra</a>` : ''}
         </div>
-        ${song.obs ? `<div class="song-obs">${escapeHtml(song.obs)}</div>` : ''}
+        ${song.obs ? `<div class="song-obs" title="${escapeAttr(song.obs)}">${escapeHtml(song.obs)}</div>` : ''}
       </div>
       ${selectMode ? '' : `
       <div class="song-actions">
