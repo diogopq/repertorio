@@ -1037,15 +1037,18 @@ function renderSongs(){
     `;
     if (selectMode){
       const checkbox = li.querySelector('.song-check');
-      const toggle = ()=>{
-        if (selectedSongIds.has(song.id)) selectedSongIds.delete(song.id);
-        else selectedSongIds.add(song.id);
+      const syncSelection = (isChecked)=>{
+        if (isChecked) selectedSongIds.add(song.id);
+        else selectedSongIds.delete(song.id);
         updateFloatingBar();
-        checkbox.checked = selectedSongIds.has(song.id);
       };
       checkbox.addEventListener('click', (e)=> e.stopPropagation());
-      checkbox.addEventListener('change', updateFloatingBar);
-      li.addEventListener('click', (e)=>{ if (e.target !== checkbox) toggle(); });
+      checkbox.addEventListener('change', ()=> syncSelection(checkbox.checked));
+      li.addEventListener('click', (e)=>{
+        if (e.target === checkbox) return;
+        checkbox.checked = !checkbox.checked;
+        syncSelection(checkbox.checked);
+      });
     } else {
       li.querySelector('[data-act="play"]').addEventListener('click', ()=> playSong(i));
       li.querySelector('[data-act="up"]').addEventListener('click', ()=> reorder(i, -1));
